@@ -11,7 +11,7 @@ use tokio::time::{sleep, Duration};
 
 mod graph;
 
-// Configura il logger con fern per inviare log sia su stdout che su file
+// Configure the logger with fern to send logs to both stdout and a file
 fn setup_logger() -> Result<(), Box<dyn Error>> {
     let colors_line = ColoredLevelConfig::new()
         .info(Color::Green)
@@ -33,14 +33,14 @@ fn setup_logger() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// Funzione asincrona che esegue la richiesta POST per una riga CSV,
-// gestendo il caso in cui l'API risponda con 429 "Too Many Requests".
+// Asynchronous function that executes the POST request for a CSV row,
+// handling the case where the API responds with 429 "Too Many Requests".
 async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: RequestBody) {
     loop {
         match client.post(endpoint).json(&body).send().await {
             Ok(response) => {
                 if response.status().as_u16() == 429 {
-                    // Estrae l'header Retry-After e attende il tempo necessario espresso in secondi
+                    // Extract the Retry-After header and wait for the necessary time expressed in seconds
                     if let Some(retry_after_value) = response.headers().get("Retry-After") {
                         if let Ok(retry_after_str) = retry_after_value.to_str() {
                             if let Ok(wait_secs) = retry_after_str.parse::<u64>() {
@@ -49,7 +49,7 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
                                     wait_secs
                                 );
                                 sleep(Duration::from_secs(wait_secs)).await;
-                                continue; // Ripete il loop per ritentare la richiesta
+                                continue; // Repeat the loop to retry the request
                             }
                         }
                     }
@@ -76,41 +76,41 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Configura il logger
+    // Configure the logger
     setup_logger()?;
 
-    // Numero massimo di richieste concorrenti (controlla la concorrenza)
+    // Maximum number of concurrent requests (controls concurrency)
     let max_concurrent_requests = 4;
     let semaphore = Arc::new(Semaphore::new(max_concurrent_requests));
 
-    // Endpoint REST fisso
+    // Fixed REST endpoint
     let endpoint = "https://lillozzo.free.beeceptor.com";
     let client = reqwest::Client::new();
 
-    // Apri il file CSV. Assicurati che il file "data.csv" sia presente nella directory corrente.
+    // Open the CSV file. Ensure that the "data.csv" file is present in the current directory.
     let file_path = "data.csv";
     let mut rdr = csv::Reader::from_path(file_path)?;
 
     let mut handles = vec![];
 
-    // Itera su ciascuna riga del CSV, deserializzandola in RequestBody
+    // Iterate over each row of the CSV, deserializing it into RequestBody
     for result in rdr.deserialize() {
         let record: RequestBody = result?;
         let client = client.clone();
         let endpoint = endpoint.to_string();
         let semaphore_clone = semaphore.clone();
-        // Acquisizione del permesso per rispettare il limite di concorrenza
+        // Acquire permission to respect the concurrency limit
         let permit = semaphore_clone.acquire_owned().await?;
         let handle = tokio::spawn(async move {
             info!("Inizio elaborazione della riga: {:?}", record);
             make_async_rest_call(&client, &endpoint, record).await;
-            // Il permesso viene rilasciato automaticamente al termine del task (grazie a drop)
+            // The permit is automatically released at the end of the task (thanks to drop)
             drop(permit);
         });
         handles.push(handle);
     }
 
-    // Attende che tutti i task completino
+    // Wait for all tasks to complete
     for handle in handles {
         handle.await?;
     }

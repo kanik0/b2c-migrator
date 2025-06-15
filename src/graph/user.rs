@@ -4,10 +4,10 @@ use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
-// Oggetto per rappresentare le identità
+// Object to represent identities
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RequestBody {
-    // Campi obbligatori per la creazione di un utente
+    // Mandatory fields for creating a user
     pub accountEnabled: bool,
     pub displayName: String,
     pub mailNickname: String,
@@ -15,7 +15,7 @@ pub struct RequestBody {
     #[serde(deserialize_with = "deserialize_password_profile")]
     pub passwordProfile: PasswordProfile,
 
-    // Campi opzionali (basati sulle proprietà dell'oggetto user)
+    // Optional fields (based on user object properties)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub businessPhones: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,8 +70,8 @@ pub struct RequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identities: Option<Vec<Identity>>,
 
-    // Altri campi (come job-related, date di creazione, ecc.) possono essere aggiunti se necessario.
-    // I campi non gestiti esplicitamente verranno raccolti in custom_fields
+    // Other fields (like job-related, creation dates, etc.) can be added if necessary.
+    // Fields not explicitly handled will be collected in custom_fields
     #[serde(flatten)]
     pub custom_fields: HashMap<String, serde_json::Value>,
 }
@@ -89,12 +89,12 @@ pub struct Identity {
     pub issuerAssignedId: String,
 }
 
-// Custom deserializer per il campo passwordProfile. Qui ci aspettiamo una stringa JSON.
+// Custom deserializer for the passwordProfile field. We expect a JSON string here.
 fn deserialize_password_profile<'de, D>(deserializer: D) -> Result<PasswordProfile, D::Error>
 where
     D: Deserializer<'de>,
 {
-    // Deserializziamo il valore come stringa
+    // Deserialize the value as a string
     let s = String::deserialize(deserializer)?;
     serde_json::from_str(&s).map_err(serde::de::Error::custom)
 }
@@ -105,7 +105,7 @@ pub fn deserialize_object_identities<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    // Tenta di deserializzare la stringa come Option<String>
+    // Attempt to deserialize the string as Option<String>
     let opt = Option::<String>::deserialize(deserializer)?;
     match opt {
         Some(s) if !s.trim().is_empty() => {
