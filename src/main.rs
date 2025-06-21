@@ -144,8 +144,8 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
                         if let Ok(retry_after_str) = retry_after_value.to_str() {
                             if let Ok(wait_secs) = retry_after_str.parse::<u64>() {
                                 info!(
-                                    "Ricevuto 429. Attesa di {} secondi prima di riprovare.",
-                                    wait_secs
+                                    "[{:?}] Ricevuto 429. Attesa di {} secondi prima di riprovare.",
+                                    body.userPrincipalName, wait_secs
                                 );
                                 sleep(Duration::from_secs(wait_secs)).await;
                                 continue; // Repeat the loop to retry the request
@@ -153,20 +153,24 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
                         }
                     }
                     error!(
-                        "429 ricevuto, ma header Retry-After non valido. Interruzione del task."
+                        "[{:?}] 429 ricevuto, ma header Retry-After non valido. Interruzione del task.",
+                        body.userPrincipalName
                     );
                     break;
                 } else {
                     info!(
-                        "Chiamata a {} completata con stato: {}",
-                        endpoint,
+                        "[{:?}] Chiamata completata con stato: {}.",
+                        body.userPrincipalName,
                         response.status()
                     );
                     break;
                 }
             }
             Err(e) => {
-                error!("Errore nella chiamata a {}: {:?}", endpoint, e);
+                error!(
+                    "[{:?}] Errore nella chiamata: {:?}.",
+                    body.userPrincipalName, e
+                );
                 break;
             }
         }
@@ -201,7 +205,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Acquire permission to respect the concurrency limit
         let permit = semaphore_clone.acquire_owned().await?;
         let handle = tokio::spawn(async move {
-            info!("Inizio elaborazione della riga: {:?}", record);
+            info!(
+                "[{:?}] Inizio elaborazione dell'utente.",
+                record.userPrincipalName
+            );
             make_async_rest_call(&client, &endpoint, record).await;
             // The permit is automatically released at the end of the task (thanks to drop)
             drop(permit);
