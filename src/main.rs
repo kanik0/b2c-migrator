@@ -1,9 +1,6 @@
-use chrono;
-use csv;
 use fern::colors::{Color, ColoredLevelConfig};
 use graph::*;
 use log::{error, info};
-use reqwest;
 use rusqlite::{params, Connection};
 use std::error::Error;
 use std::io::{self, Write};
@@ -144,6 +141,99 @@ fn setup_logger() -> Result<(), Box<dyn Error>> {
         // Wrap db_logger in a Box to satisfy the 'Send' bound
         .chain(Box::new(db_logger) as Box<dyn Write + Send>)
         .apply()?;
+    Ok(())
+}
+
+// Asynchronous function that executes the POST request for a CSV row,
+// handling the case where the API responds with 429 "Too Many Requests".
+async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: RequestBody) {
+    loop {
+        match client.post(endpoint).json(&body).send().await {
+            Ok(response) => {
+                if response.status().as_u16() == 429 {
+                    // Extract the Retry-After header and wait for the necessary time expressed in seconds
+                    if let Some(retry_after_value) = response.headers().get("Retry-After") {
+                        if let Ok(retry_after_str) = retry_after_value.to_str() {
+                            if let Ok(wait_secs) = retry_after_str.parse::<u64>() {
+                                info!(
+                                    "[{:?}] Ricevuto 429. Attesa di {} secondi prima di riprovare.",
+                                    body.identities[0].issuerAssignedId, wait_secs
+                                );
+                                sleep(Duration::from_secs(wait_secs)).await;
+                                continue; // Repeat the loop to retry the request
+                            }
+                        }
+                    }
+                    error!(
+                        "[{:?}] 429 ricevuto, ma header Retry-After non valido. Interruzione del task.",
+                        body.identities[0].issuerAssignedId
+                    );
+                    break;
+                } else {
+                    info!(
+                        "[{:?}] Chiamata completata con stato: {}.",
+                        body.identities[0].issuerAssignedId,
+                        response.status()
+                    );
+                    break;
+                }
+            }
+            Err(e) => {
+                error!(
+                    "[{:?}] Errore nella chiamata: {:?}.",
+                    body.identities[0].issuerAssignedId, e
+                );
+                break;
+            }
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // Configure the logger
+    setup_logger()?;
+
+    // Maximum number of concurrent requests (controls concurrency)
+    let max_concurrent_requests = 4;
+    let semaphore = Arc::new(Semaphore::new(max_concurrent_requests));
+
+    // Fixed REST endpoint
+    let endpoint = "https://rullo.free.beeceptor.com";
+    let client = reqwest::Client::new();
+
+    // Open the CSV file. Ensure that the "data.csv" file is present in the current directory.
+    let file_path = "data.csv";
+    let mut rdr = csv::Reader::from_path(file_path)?;
+
+    let mut handles = vec![];
+
+    // Iterate over each row of the CSV, deserializing it into RequestBody
+    for result in rdr.deserialize() {
+        let record: RequestBody = result?;
+        let client = client.clone();
+        let endpoint = endpoint.to_string();
+        let semaphore_clone = semaphore.clone();
+        // Acquire permission to respect the concurrency limit
+        let permit = semaphore_clone.acquire_owned().await?;
+        let handle = tokio::spawn(async move {
+            info!(
+                "[{:?}] Inizio elaborazione dell'utente.",
+                record.identities[0].issuerAssignedId
+            );
+            make_async_rest_call(&client, &endpoint, record).await;
+            // The permit is automatically released at the end of the task (thanks to drop)
+            drop(permit);
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all tasks to complete
+    for handle in handles {
+        handle.await?;
+    }
+
+    info!("[END] Tutte le operazioni del CSV sono state completate.");
     Ok(())
 }
 
@@ -573,101 +663,8 @@ mod tests {
         // We can't easily assert logs here without a more complex setup,
         // but the main thing is that the function should complete and not panic.
         // The error will be logged by the function itself.
-        make_async_rest_call(&client, &endpoint, body).await;
+        make_async_rest_call(&client, endpoint, body).await;
         // No mockito assertion here as we are not using a mockito server for this specific test.
         // We rely on the function's own error logging and graceful exit from the loop.
     }
-}
-
-// Asynchronous function that executes the POST request for a CSV row,
-// handling the case where the API responds with 429 "Too Many Requests".
-async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: RequestBody) {
-    loop {
-        match client.post(endpoint).json(&body).send().await {
-            Ok(response) => {
-                if response.status().as_u16() == 429 {
-                    // Extract the Retry-After header and wait for the necessary time expressed in seconds
-                    if let Some(retry_after_value) = response.headers().get("Retry-After") {
-                        if let Ok(retry_after_str) = retry_after_value.to_str() {
-                            if let Ok(wait_secs) = retry_after_str.parse::<u64>() {
-                                info!(
-                                    "[{:?}] Ricevuto 429. Attesa di {} secondi prima di riprovare.",
-                                    body.identities[0].issuerAssignedId, wait_secs
-                                );
-                                sleep(Duration::from_secs(wait_secs)).await;
-                                continue; // Repeat the loop to retry the request
-                            }
-                        }
-                    }
-                    error!(
-                        "[{:?}] 429 ricevuto, ma header Retry-After non valido. Interruzione del task.",
-                        body.identities[0].issuerAssignedId
-                    );
-                    break;
-                } else {
-                    info!(
-                        "[{:?}] Chiamata completata con stato: {}.",
-                        body.identities[0].issuerAssignedId,
-                        response.status()
-                    );
-                    break;
-                }
-            }
-            Err(e) => {
-                error!(
-                    "[{:?}] Errore nella chiamata: {:?}.",
-                    body.identities[0].issuerAssignedId, e
-                );
-                break;
-            }
-        }
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    // Configure the logger
-    setup_logger()?;
-
-    // Maximum number of concurrent requests (controls concurrency)
-    let max_concurrent_requests = 4;
-    let semaphore = Arc::new(Semaphore::new(max_concurrent_requests));
-
-    // Fixed REST endpoint
-    let endpoint = "https://rullo.free.beeceptor.com";
-    let client = reqwest::Client::new();
-
-    // Open the CSV file. Ensure that the "data.csv" file is present in the current directory.
-    let file_path = "data.csv";
-    let mut rdr = csv::Reader::from_path(file_path)?;
-
-    let mut handles = vec![];
-
-    // Iterate over each row of the CSV, deserializing it into RequestBody
-    for result in rdr.deserialize() {
-        let record: RequestBody = result?;
-        let client = client.clone();
-        let endpoint = endpoint.to_string();
-        let semaphore_clone = semaphore.clone();
-        // Acquire permission to respect the concurrency limit
-        let permit = semaphore_clone.acquire_owned().await?;
-        let handle = tokio::spawn(async move {
-            info!(
-                "[{:?}] Inizio elaborazione dell'utente.",
-                record.identities[0].issuerAssignedId
-            );
-            make_async_rest_call(&client, &endpoint, record).await;
-            // The permit is automatically released at the end of the task (thanks to drop)
-            drop(permit);
-        });
-        handles.push(handle);
-    }
-
-    // Wait for all tasks to complete
-    for handle in handles {
-        handle.await?;
-    }
-
-    info!("[END] Tutte le operazioni del CSV sono state completate.");
-    Ok(())
 }
