@@ -6,9 +6,6 @@ on:
       - master
     tags:
       - 'v*.*.*' # Push events to matching v*, i.e. v1.0, v20.15.10
-  pull_request: # Also run on pull requests to master for checks
-    branches:
-      - master
 
 env:
   CARGO_TERM_COLOR: always
