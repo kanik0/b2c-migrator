@@ -1,0 +1,152 @@
+name: Rust CI/CD
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*.*.*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  pull_request: # Also run on pull requests to master for checks
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+  # PROJECT_NAME: b2c-migrator # Will be used later for artifact naming
+
+jobs:
+  build_and_test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    # This job should run on pushes to master AND pull requests to master
+    # The top-level 'on' already handles this, so no specific 'if' needed here for that.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets -- -D warnings # Treat warnings as errors
+
+      - name: Build (debug)
+        run: cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+  build_release_artifacts:
+    name: Build Release Artifacts
+    if: startsWith(github.ref, 'refs/tags/v') # Only run on tag pushes
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name_suffix: linux-x86_64
+            binary_name: b2c-migrator # Standard name for Linux/macOS
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name_suffix: macos-x86_64
+            binary_name: b2c-migrator
+          # - os: macos-latest # Example for M1/M2 (Apple Silicon)
+          #   target: aarch64-apple-darwin
+          #   artifact_name_suffix: macos-aarch64
+          #   binary_name: b2c-migrator
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name_suffix: windows-x86_64
+            binary_name: b2c-migrator.exe # .exe for Windows
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain for target ${{ matrix.target }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Build release binary for ${{ matrix.target }}
+        run: cargo build --verbose --release --target ${{ matrix.target }}
+
+      - name: Prepare artifact for ${{ matrix.target }}
+        # This step prepares the binary for upload.
+        # For Linux/macOS, it's straightforward. For Windows, it's already .exe.
+        # We'll copy it to a consistent name for upload.
+        shell: bash # Use bash for consistent commands
+        run: |
+          SOURCE_PATH="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+          DEST_NAME="b2c-migrator-${{ matrix.artifact_name_suffix }}"
+          # On Windows, the built binary_name already includes .exe. We want the DEST_NAME to also end in .exe
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            DEST_NAME="${DEST_NAME}.exe"
+          fi
+          echo "Source Path: $SOURCE_PATH"
+          echo "Destination Name: $DEST_NAME"
+          cp "$SOURCE_PATH" "$DEST_NAME"
+
+      - name: Upload artifact ${{ matrix.target }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2c-migrator-${{ matrix.artifact_name_suffix }} # This name is used by downloader
+          path: b2c-migrator-${{ matrix.artifact_name_suffix }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          if-no-files-found: error # Error if the file is not found
+
+  create_github_release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v') # Only run on tag pushes
+    needs: [build_release_artifacts] # Depends on successful artifact builds
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create releases and upload assets
+    steps:
+      - name: Checkout code (optional, for release notes or context)
+        uses: actions/checkout@v4
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # No name specified, downloads all artifacts from the workflow run
+          # Artifacts will be placed in directories named after the artifact name from upload step
+          path: release-artifacts # All artifacts will be in subdirectories here
+
+      - name: List downloaded artifacts (for debugging)
+        run: ls -R release-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # The GITHUB_TOKEN is automatically provided by GitHub Actions
+          # Name of the release. Defaults to the tag name.
+          # name: Release ${{ github.ref_name }}
+          # Body of the release. Can be empty or automatically generated.
+          # body: |
+          #   Automated release for ${{ github.ref_name }}
+          #   See [CHANGELOG.md](CHANGELOG.md) for details.
+          # draft: false # Set to true to create a draft release
+          # prerelease: false # Set to true to mark as a pre-release
+          files: |
+            release-artifacts/b2c-migrator-linux-x86_64/b2c-migrator-linux-x86_64
+            release-artifacts/b2c-migrator-macos-x86_64/b2c-migrator-macos-x86_64
+            release-artifacts/b2c-migrator-windows-x86_64/b2c-migrator-windows-x86_64.exe
+          # Note: The paths in 'files' must exactly match the paths after download.
+          # actions/download-artifact places each artifact in a directory named after the artifact.
+          # The artifact names were:
+          #   b2c-migrator-linux-x86_64
+          #   b2c-migrator-macos-x86_64
+          #   b2c-migrator-windows-x86_64
+          # And the file paths within those uploads were (from previous step):
+          #   b2c-migrator-linux-x86_64
+          #   b2c-migrator-macos-x86_64
+          #   b2c-migrator-windows-x86_64.exe
+          # So the paths above should be correct.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
