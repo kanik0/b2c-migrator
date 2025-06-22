@@ -1,7 +1,7 @@
 #![allow(clippy::io_other_error)]
 use fern::colors::{Color, ColoredLevelConfig};
 use graph::*;
-use log::{error, info};
+use log::{error, info, warn};
 use rusqlite::{params, Connection};
 use std::error::Error;
 use std::io::{self, Write};
@@ -151,12 +151,19 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
     loop {
         match client.post(endpoint).json(&body).send().await {
             Ok(response) => {
-                if response.status().as_u16() == 429 {
+                if response.status().is_success() {
+                    info!(
+                        "[{:?}] Chiamata completata con stato: {}.",
+                        body.identities[0].issuerAssignedId,
+                        response.status()
+                    );
+                    break;
+                } else if response.status().as_u16() == 429 {
                     // Extract the Retry-After header and wait for the necessary time expressed in seconds
                     if let Some(retry_after_value) = response.headers().get("Retry-After") {
                         if let Ok(retry_after_str) = retry_after_value.to_str() {
                             if let Ok(wait_secs) = retry_after_str.parse::<u64>() {
-                                info!(
+                                warn!(
                                     "[{:?}] Ricevuto 429. Attesa di {} secondi prima di riprovare.",
                                     body.identities[0].issuerAssignedId, wait_secs
                                 );
@@ -171,8 +178,8 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
                     );
                     break;
                 } else {
-                    info!(
-                        "[{:?}] Chiamata completata con stato: {}.",
+                    error!(
+                        "[{:?}] Errore nella chiamata con stato: {}.",
                         body.identities[0].issuerAssignedId,
                         response.status()
                     );
@@ -200,7 +207,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let semaphore = Arc::new(Semaphore::new(max_concurrent_requests));
 
     // Fixed REST endpoint
-    let endpoint = "https://rullo.free.beeceptor.com";
+    let endpoint = "https://lilonz.free.beeceptor.com";
     let client = reqwest::Client::new();
 
     // Open the CSV file. Ensure that the "data.csv" file is present in the current directory.
