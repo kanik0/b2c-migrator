@@ -1,3 +1,4 @@
+#[allow(clippy::io_other_error)]
 use fern::colors::{Color, ColoredLevelConfig};
 use graph::*;
 use log::{error, info};
