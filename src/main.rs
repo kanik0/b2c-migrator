@@ -28,34 +28,48 @@ impl DBLogger {
     fn insert_line(&self, line: &str) -> io::Result<()> {
         let conn_lock = self.conn.lock().unwrap();
         let sql = format!(
-            "INSERT INTO '{}' (timestamp, level, message) VALUES (?, ?, ?)",
+            "INSERT INTO '{}' (timestamp, level, username, message) VALUES (?, ?, ?, ?)",
             self.table
         );
-        // Try to interpret the format "YYYY-MM-DD HH:MM:SS [LEVEL] Message"
-        // If the line is long enough, extract timestamp, level, and message.
+        // Expecting the format: "YYYY-MM-DD HH:MM:SS [LEVEL] [USERNAME] actual message..."
         if line.len() >= 30 {
             let timestamp = &line[0..19];
+            // Extract level
             let level_start = line.find('[').unwrap_or(0);
             let level_end = line.find(']').unwrap_or(0);
             let level = if level_end > level_start {
-                &line[(level_start + 1)..level_end]
+                line[(level_start + 1)..level_end].trim()
             } else {
                 ""
             };
-            let message = if level_end + 2 <= line.len() {
+            // The rest of the message (starting after level)
+            let full_message = if level_end + 2 <= line.len() {
                 line[level_end + 2..].trim()
             } else {
                 ""
             };
+            // Now, if full_message starts with '[', extract the username (without quotes) between brackets.
+            let (raw_username, message) = if full_message.starts_with('[') {
+                if let Some(user_end) = full_message.find(']') {
+                    let user = full_message[1..user_end].trim();
+                    let msg = full_message[(user_end + 1)..].trim();
+                    (user, msg)
+                } else {
+                    ("", full_message)
+                }
+            } else {
+                ("", full_message)
+            };
+            let username = raw_username.replace("\"", "");
             conn_lock
-                .execute(&sql, params![timestamp, level, message])
+                .execute(&sql, params![timestamp, level, username, message])
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         } else {
-            // fallback: insert the entire line as the message and the current timestamp
+            // fallback: insert the entire line as the message without username and level.
             conn_lock
                 .execute(
                     &sql,
-                    params![chrono::Local::now().to_string(), "", line.trim()],
+                    params![chrono::Local::now().to_string(), "", "", line.trim()],
                 )
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
@@ -101,8 +115,9 @@ fn setup_logger() -> Result<(), Box<dyn Error>> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT,
             level TEXT,
+            username TEXT,
             message TEXT
-         )",
+        )",
         table_name
     );
     db_conn.execute(&create_table_sql, [])?;
@@ -145,7 +160,7 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
                             if let Ok(wait_secs) = retry_after_str.parse::<u64>() {
                                 info!(
                                     "[{:?}] Ricevuto 429. Attesa di {} secondi prima di riprovare.",
-                                    body.userPrincipalName, wait_secs
+                                    body.identities[0].issuerAssignedId, wait_secs
                                 );
                                 sleep(Duration::from_secs(wait_secs)).await;
                                 continue; // Repeat the loop to retry the request
@@ -154,13 +169,13 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
                     }
                     error!(
                         "[{:?}] 429 ricevuto, ma header Retry-After non valido. Interruzione del task.",
-                        body.userPrincipalName
+                        body.identities[0].issuerAssignedId
                     );
                     break;
                 } else {
                     info!(
                         "[{:?}] Chiamata completata con stato: {}.",
-                        body.userPrincipalName,
+                        body.identities[0].issuerAssignedId,
                         response.status()
                     );
                     break;
@@ -169,7 +184,7 @@ async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: Re
             Err(e) => {
                 error!(
                     "[{:?}] Errore nella chiamata: {:?}.",
-                    body.userPrincipalName, e
+                    body.identities[0].issuerAssignedId, e
                 );
                 break;
             }
@@ -187,7 +202,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let semaphore = Arc::new(Semaphore::new(max_concurrent_requests));
 
     // Fixed REST endpoint
-    let endpoint = "https://lillozzo.free.beeceptor.com";
+    let endpoint = "https://rullo.free.beeceptor.com";
     let client = reqwest::Client::new();
 
     // Open the CSV file. Ensure that the "data.csv" file is present in the current directory.
@@ -207,7 +222,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let handle = tokio::spawn(async move {
             info!(
                 "[{:?}] Inizio elaborazione dell'utente.",
-                record.userPrincipalName
+                record.identities[0].issuerAssignedId
             );
             make_async_rest_call(&client, &endpoint, record).await;
             // The permit is automatically released at the end of the task (thanks to drop)
@@ -221,6 +236,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         handle.await?;
     }
 
-    info!("Tutte le operazioni del CSV sono state completate.");
+    info!("[END] Tutte le operazioni del CSV sono state completate.");
     Ok(())
 }
