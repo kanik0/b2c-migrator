@@ -53,10 +53,10 @@ jobs:
             target: x86_64-apple-darwin
             artifact_name_suffix: macos-x86_64
             binary_name: b2c-migrator
-          # - os: macos-latest # Example for M1/M2 (Apple Silicon)
-          #   target: aarch64-apple-darwin
-          #   artifact_name_suffix: macos-aarch64
-          #   binary_name: b2c-migrator
+          - os: macos-latest # Apple Silicon
+            target: aarch64-apple-darwin
+            artifact_name_suffix: macos-aarch64
+            binary_name: b2c-migrator
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name_suffix: windows-x86_64
