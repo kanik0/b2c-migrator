@@ -16,6 +16,7 @@ fern = { version = "0.7.1", features = ["colored"] }
 log = "0.4.27"
 reqwest = { version = "0.12.20", features = ["json"] }
 rusqlite = { version = "0.36.0", features = ["bundled"] }
+indicatif = "0.17.11"
 
 [dev-dependencies]
 mockito = "1" # Using "1" to get the latest 1.x.y version

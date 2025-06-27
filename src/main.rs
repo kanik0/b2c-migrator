@@ -1,6 +1,7 @@
 #![allow(clippy::io_other_error)]
 use fern::colors::{Color, ColoredLevelConfig};
 use graph::*;
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{error, info, warn};
 use rusqlite::{params, Connection};
 use std::error::Error;
@@ -147,9 +148,20 @@ fn setup_logger() -> Result<(), Box<dyn Error>> {
 
 // Asynchronous function that executes the POST request for a CSV row,
 // handling the case where the API responds with 429 "Too Many Requests".
-async fn make_async_rest_call(client: &reqwest::Client, endpoint: &str, body: RequestBody) {
+async fn make_async_rest_call(
+    client: &reqwest::Client,
+    endpoint: &str,
+    body: RequestBody,
+    token: &str,
+) {
     loop {
-        match client.post(endpoint).json(&body).send().await {
+        match client
+            .post(endpoint)
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&body)
+            .send()
+            .await
+        {
             Ok(response) => {
                 if response.status().is_success() {
                     info!(
@@ -206,13 +218,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let max_concurrent_requests = 4;
     let semaphore = Arc::new(Semaphore::new(max_concurrent_requests));
 
+    // Bearer token parsed from command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let token_str = args
+        .windows(2)
+        .find(|w| w[0] == "--token")
+        .map(|w| w[1].clone())
+        .expect("Usage: ./b2c-migrator --token <TOKEN>");
+    let bearer_token: &str = Box::leak(token_str.into_boxed_str());
+
     // Fixed REST endpoint
-    let endpoint = "https://lilonz.free.beeceptor.com";
+    let endpoint = "https://lillozzoso.free.beeceptor.com";
     let client = reqwest::Client::new();
 
     // Open the CSV file. Ensure that the "data.csv" file is present in the current directory.
     let file_path = "data.csv";
     let mut rdr = csv::Reader::from_path(file_path)?;
+    let records: Vec<_> = csv::Reader::from_path(file_path)?
+        .records()
+        .filter_map(Result::ok)
+        .collect();
+    let total_rows = records.len() as u64;
+
+    // Create the progress bar with the total number of rows.
+    let pb = Arc::new(ProgressBar::new(total_rows));
+    let style = ProgressStyle::default_bar()
+        .template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)",
+        )
+        .unwrap()
+        .progress_chars("#>-");
+    pb.set_style(style);
 
     let mut handles = vec![];
 
@@ -224,12 +260,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let semaphore_clone = semaphore.clone();
         // Acquire permission to respect the concurrency limit
         let permit = semaphore_clone.acquire_owned().await?;
+        let pb = pb.clone();
         let handle = tokio::spawn(async move {
             info!(
                 "[{:?}] Inizio elaborazione dell'utente.",
                 record.identities[0].issuerAssignedId
             );
-            make_async_rest_call(&client, &endpoint, record).await;
+            make_async_rest_call(&client, &endpoint, record, bearer_token).await;
+            pb.inc(1);
             // The permit is automatically released at the end of the task (thanks to drop)
             drop(permit);
         });
@@ -241,6 +279,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         handle.await?;
     }
 
+    pb.finish_with_message("CSV processing complete");
     info!("[END] Tutte le operazioni del CSV sono state completate.");
     Ok(())
 }
@@ -522,6 +561,7 @@ mod tests {
         let endpoint = server.url();
         let client = reqwest::Client::new();
         let body = create_dummy_request_body("user_success");
+        let bearer_token = "Bearer token";
 
         let mock = server
             .mock("POST", "/")
@@ -530,7 +570,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body).await;
+        make_async_rest_call(&client, &endpoint, body, bearer_token).await;
         mock.assert_async().await;
     }
 
@@ -543,6 +583,7 @@ mod tests {
         let endpoint = server.url();
         let client = reqwest::Client::new(); // Keep client for reuse
         let body = create_dummy_request_body("user_429_retry");
+        let bearer_token = "Bearer token";
 
         // First call: 429 with Retry-After
         let mock429 = server
@@ -565,7 +606,7 @@ mod tests {
         let client_clone = client.clone();
         let endpoint_clone = endpoint.to_string(); // server.url() returns String, so cloning is fine.
         let task = tokio::spawn(async move {
-            make_async_rest_call(&client_clone, &endpoint_clone, body).await
+            make_async_rest_call(&client_clone, &endpoint_clone, body, bearer_token).await
         });
 
         // Allow the first call to happen
@@ -590,6 +631,7 @@ mod tests {
         let endpoint = server.url();
         let client = reqwest::Client::new();
         let body = create_dummy_request_body("user_429_invalid_retry");
+        let bearer_token = "Bearer token";
 
         let mock = server
             .mock("POST", "/")
@@ -601,7 +643,7 @@ mod tests {
 
         // No need to pause/advance time here as it should not sleep with invalid header
 
-        make_async_rest_call(&client, &endpoint, body).await;
+        make_async_rest_call(&client, &endpoint, body, bearer_token).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -611,6 +653,7 @@ mod tests {
         let endpoint = server.url();
         let client = reqwest::Client::new();
         let body = create_dummy_request_body("user_429_no_retry_header");
+        let bearer_token = "Bearer token";
 
         let mock = server
             .mock("POST", "/")
@@ -620,7 +663,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body).await;
+        make_async_rest_call(&client, &endpoint, body, bearer_token).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -630,6 +673,7 @@ mod tests {
         let endpoint = server.url();
         let client = reqwest::Client::new();
         let body = create_dummy_request_body("user_400_error");
+        let bearer_token = "Bearer token";
 
         let mock = server
             .mock("POST", "/")
@@ -638,7 +682,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body).await;
+        make_async_rest_call(&client, &endpoint, body, bearer_token).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -648,6 +692,7 @@ mod tests {
         let endpoint = server.url();
         let client = reqwest::Client::new();
         let body = create_dummy_request_body("user_500_error");
+        let bearer_token = "Bearer token";
 
         let mock = server
             .mock("POST", "/")
@@ -656,7 +701,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body).await;
+        make_async_rest_call(&client, &endpoint, body, bearer_token).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -667,11 +712,12 @@ mod tests {
         let endpoint = "http://localhost:12345"; // Assuming this port is not in use
         let client = reqwest::Client::new();
         let body = create_dummy_request_body("user_network_error");
+        let bearer_token = "Bearer token";
 
         // We can't easily assert logs here without a more complex setup,
         // but the main thing is that the function should complete and not panic.
         // The error will be logged by the function itself.
-        make_async_rest_call(&client, endpoint, body).await;
+        make_async_rest_call(&client, endpoint, body, bearer_token).await;
         // No mockito assertion here as we are not using a mockito server for this specific test.
         // We rely on the function's own error logging and graceful exit from the loop.
     }
