@@ -1,4 +1,5 @@
 #![allow(clippy::io_other_error)]
+use clap::{Arg, Command};
 use fern::colors::{Color, ColoredLevelConfig};
 use graph::*;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -165,7 +166,7 @@ async fn make_async_rest_call(
             Ok(response) => {
                 if response.status().is_success() {
                     info!(
-                        "[{:?}] Chiamata completata con stato: {}.",
+                        "[{:?}] Request completed successfully with status: {}.",
                         body.identities[0].issuerAssignedId,
                         response.status()
                     );
@@ -176,7 +177,7 @@ async fn make_async_rest_call(
                         if let Ok(retry_after_str) = retry_after_value.to_str() {
                             if let Ok(wait_secs) = retry_after_str.parse::<u64>() {
                                 warn!(
-                                    "[{:?}] Ricevuto 429. Attesa di {} secondi prima di riprovare.",
+                                    "[{:?}] Received 429. Waiting for {} seconds before retrying.",
                                     body.identities[0].issuerAssignedId, wait_secs
                                 );
                                 sleep(Duration::from_secs(wait_secs)).await;
@@ -185,13 +186,13 @@ async fn make_async_rest_call(
                         }
                     }
                     error!(
-                        "[{:?}] 429 ricevuto, ma header Retry-After non valido. Interruzione del task.",
+                        "[{:?}] Received 429, but Retry-After header is invalid. Task interruption.",
                         body.identities[0].issuerAssignedId
                     );
                     break;
                 } else {
                     error!(
-                        "[{:?}] Errore nella chiamata con stato: {}.",
+                        "[{:?}] Error in request with status: {}.",
                         body.identities[0].issuerAssignedId,
                         response.status()
                     );
@@ -200,7 +201,7 @@ async fn make_async_rest_call(
             }
             Err(e) => {
                 error!(
-                    "[{:?}] Errore nella chiamata: {:?}.",
+                    "[{:?}] Error in request: {:?}.",
                     body.identities[0].issuerAssignedId, e
                 );
                 break;
@@ -214,27 +215,65 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Configure the logger
     setup_logger()?;
 
+    // Manage args
+    let matches = Command::new("B2C Migrator")
+        .version(env!("CARGO_PKG_VERSION"))
+        .author("kanik0")
+        .about("Migrate your users to Azure AD B2C using Microsoft Graph API")
+        .arg(
+            Arg::new("token")
+                .short('t')
+                .long("token")
+                .help("Sets the bearer token used for authentication")
+                .required(true)
+                .num_args(1),
+        )
+        .arg(
+            Arg::new("data")
+                .short('d')
+                .long("data")
+                .help("Sets the path to the CSV data file")
+                .required(true)
+                .num_args(1),
+        )
+        .arg(
+            Arg::new("threads")
+                .short('n')
+                .long("threads")
+                .help("Sets the number of threads to use")
+                .required(false)
+                .default_value("4")
+                .num_args(1),
+        )
+        .get_matches();
+
+    // Bearer token for authentication
+    let bearer_token = matches
+        .get_one::<String>("token")
+        .expect("Bearer token is required")
+        .clone();
+
+    // File path to the CSV data file
+    let file_path = matches
+        .get_one::<String>("data")
+        .expect("CSV data file path is required")
+        .clone();
+
     // Maximum number of concurrent requests (controls concurrency)
-    let max_concurrent_requests = 4;
+    let max_concurrent_requests_string = matches
+        .get_one::<String>("threads")
+        .expect("Number of threads is required")
+        .clone();
+    let max_concurrent_requests: usize = max_concurrent_requests_string.parse::<usize>().unwrap();
     let semaphore = Arc::new(Semaphore::new(max_concurrent_requests));
 
-    // Bearer token parsed from command line arguments
-    let args: Vec<String> = std::env::args().collect();
-    let token_str = args
-        .windows(2)
-        .find(|w| w[0] == "--token")
-        .map(|w| w[1].clone())
-        .expect("Usage: ./b2c-migrator --token <TOKEN>");
-    let bearer_token: &str = Box::leak(token_str.into_boxed_str());
-
     // Fixed REST endpoint
-    let endpoint = "https://lillozzoso.free.beeceptor.com";
+    let endpoint = "https://frillo.free.beeceptor.com";
     let client = reqwest::Client::new();
 
-    // Open the CSV file. Ensure that the "data.csv" file is present in the current directory.
-    let file_path = "data.csv";
-    let mut rdr = csv::Reader::from_path(file_path)?;
-    let records: Vec<_> = csv::Reader::from_path(file_path)?
+    // Open the CSV file.
+    let mut rdr = csv::Reader::from_path(file_path.clone())?;
+    let records: Vec<_> = csv::Reader::from_path(file_path.clone())?
         .records()
         .filter_map(Result::ok)
         .collect();
@@ -252,21 +291,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut handles = vec![];
 
+    info!("Starting migration process. Using file {file_path} with {max_concurrent_requests} threads.");
     // Iterate over each row of the CSV, deserializing it into RequestBody
     for result in rdr.deserialize() {
         let record: RequestBody = result?;
         let client = client.clone();
         let endpoint = endpoint.to_string();
+        let bearer_token = bearer_token.to_string();
         let semaphore_clone = semaphore.clone();
         // Acquire permission to respect the concurrency limit
         let permit = semaphore_clone.acquire_owned().await?;
         let pb = pb.clone();
         let handle = tokio::spawn(async move {
             info!(
-                "[{:?}] Inizio elaborazione dell'utente.",
+                "[{:?}] Starting migration process for user.",
                 record.identities[0].issuerAssignedId
             );
-            make_async_rest_call(&client, &endpoint, record, bearer_token).await;
+            make_async_rest_call(&client, &endpoint, record, &bearer_token).await;
             pb.inc(1);
             // The permit is automatically released at the end of the task (thanks to drop)
             drop(permit);
@@ -280,7 +321,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     pb.finish_with_message("CSV processing complete");
-    info!("[END] Tutte le operazioni del CSV sono state completate.");
+    info!("[END] All operations for the CSV have been completed.");
     Ok(())
 }
 
