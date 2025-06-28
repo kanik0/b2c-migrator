@@ -5,7 +5,7 @@ on:
     branches:
       - master
     tags:
-      - 'v*.*.*' # Push events to matching v*, i.e. v1.0, v20.15.10
+      - "v*.*.*" # Push events to matching v*, i.e. v1.0, v20.15.10
 
 env:
   CARGO_TERM_COLOR: always
@@ -133,6 +133,7 @@ jobs:
           files: |
             release-artifacts/b2c-migrator-linux-x86_64/b2c-migrator-linux-x86_64
             release-artifacts/b2c-migrator-macos-x86_64/b2c-migrator-macos-x86_64
+            release-artifacts/b2c-migrator-macos-aarch64/b2c-migrator-macos-aarch64
             release-artifacts/b2c-migrator-windows-x86_64/b2c-migrator-windows-x86_64.exe
           # Note: The paths in 'files' must exactly match the paths after download.
           # actions/download-artifact places each artifact in a directory named after the artifact.
