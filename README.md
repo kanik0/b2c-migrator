@@ -12,7 +12,7 @@ A command-line tool written in Rust to migrate user data from a CSV file to a ta
 *   **Comprehensive Logging:** Provides structured logging to:
     *   `stdout` (console) with colored severity levels.
     *   A local file (`output.log`).
-    *   An SQLite database (`logs.db`) with dynamically named tables for each run (e.g., `YYYYMMDDHHMMSS`), including parsed usernames in log entries.
+    *   An SQLite database (`output.db`) with dynamically named tables for each run (e.g., `YYYYMMDDHHMMSS`), including parsed usernames in log entries.
 *   **Flexible Data Mapping:** Maps CSV data to JSON request bodies. Explicit fields like `displayName`, `passwordProfile`, and `identities` are handled directly, while any other CSV columns are collected as custom fields in the JSON payload.
 
 ## Prerequisites
