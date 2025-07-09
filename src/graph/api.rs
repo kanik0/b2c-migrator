@@ -9,6 +9,7 @@ pub async fn make_async_rest_call(
     endpoint: &str,
     body: RequestBody,
     token: &str,
+    patch_auth_methods: bool,
 ) {
     loop {
         match client
@@ -20,12 +21,50 @@ pub async fn make_async_rest_call(
         {
             Ok(response) => {
                 if response.status().is_success() {
-                    info!(
-                        "[{:?}] Request completed successfully with status: {}.",
+                    if !patch_auth_methods {
+                        info!(
+                            "[{:?}] Request completed successfully with status: {}.",
+                            body.identities[0].issuerAssignedId,
+                            response.status()
+                        );
+                    } else {
+                        info!(
+                            "[{:?}] User created successfully with status: {}. Attempting to patch authentication methods.",
+                            body.identities[0].issuerAssignedId,
+                            response.status()
+                        );
+                        // Parse the JSON body into a serde_json::Value.
+                        match response.json::<serde_json::Value>().await {
+                            Ok(json_body) => {
+                                if let Some(id) = json_body.get("id") {
+                                    info!(
+                                        "[{:?}] Should do another request here using id {}.",
+                                        body.identities[0].issuerAssignedId, id
+                                    );
+                                } else {
+                                    warn!(
+                                        "[{:?}] The 'id' field was not found in the response.",
+                                        body.identities[0].issuerAssignedId
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                error!(
+                                    "[{:?}] Error parsing JSON response: {:?}",
+                                    body.identities[0].issuerAssignedId, e
+                                );
+                            }
+                        }
+                    }
+
+                    break;
+                } else if response.status().as_u16() == 401 || response.status().as_u16() == 403 {
+                    error!(
+                        "[{:?}] Something went wrong. Received {}. Maybe token is invalid or expired? Exiting..",
                         body.identities[0].issuerAssignedId,
                         response.status()
                     );
-                    break;
+                    std::process::exit(0);
                 } else if response.status().as_u16() == 429 {
                     // Extract the Retry-After header and wait for the necessary time expressed in seconds
                     if let Some(retry_after_value) = response.headers().get("Retry-After") {
