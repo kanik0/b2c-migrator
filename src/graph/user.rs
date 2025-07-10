@@ -5,7 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 // Object to represent identities
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RequestBody {
     // Mandatory fields for creating a user
     pub displayName: String,
@@ -14,20 +14,26 @@ pub struct RequestBody {
     #[serde(deserialize_with = "deserialize_identities")]
     pub identities: Vec<Identity>,
 
+    // Optional fields for the authentication methods
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authMethodType: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authMethodValue: Option<String>,
+
     // Optional fields (based on user object properties) and extension attributes
     #[serde(flatten)]
     pub custom_fields: HashMap<String, serde_json::Value>,
 }
 
 // Struct for the Password Profile element
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct PasswordProfile {
     pub forceChangePasswordNextSignIn: bool,
     pub password: String,
 }
 
 // Struct for the Identity element
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Identity {
     pub signInType: String,
     pub issuer: String,
@@ -55,6 +61,14 @@ where
         Some(s) if !s.trim().is_empty() => serde_json::from_str(&s).map_err(D::Error::custom),
         _ => Ok(Vec::new()),
     }
+}
+
+// Object that represents an authentication method
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuthMethodBody {
+    // Mandatory fields for creating the authentication method
+    pub phoneNumber: String,
+    pub phoneType: String,
 }
 
 #[cfg(test)]

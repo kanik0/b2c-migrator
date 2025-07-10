@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .long("url")
                 .help("Sets the URL for the REST endpoint")
                 .required(false)
-                .default_value("https://graph.microsoft.com/v1.0/users")
+                .default_value("https://graph.microsoft.com")
                 .num_args(1),
         )
         .get_matches();
@@ -128,7 +128,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
-    // Determine whether make_async_rest_call has to send a second request to patch the authentication methods.
+    // Determine whether create_user_api_call has to send a second request to patch the authentication methods.
     let patch_auth_methods = has_auth_method_type && has_auth_method_value;
 
     // Determine the number of records in the CSV file.
@@ -155,7 +155,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for result in rdr.deserialize() {
         let record: RequestBody = result?;
         let client = client.clone();
-        let endpoint = endpoint.to_string();
+        let endpoint = format!("{endpoint}/v1.0/users");
         let bearer_token = bearer_token.to_string();
         let semaphore_clone = semaphore.clone();
         // Acquire permission to respect the concurrency limit
@@ -166,7 +166,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 "[{:?}] Starting migration process for user.",
                 record.identities[0].issuerAssignedId
             );
-            make_async_rest_call(
+            create_user_api_call(
                 &client,
                 &endpoint,
                 record,
@@ -434,7 +434,7 @@ mod tests {
         );
     }
 
-    // --- Tests for make_async_rest_call ---
+    // --- Tests for create_user_api_call ---
     // We need to bring in RequestBody, Identity for these tests.
     // Since they are in graph::mod, and graph is a sibling module, we use crate::graph::*
     use crate::graph::{Identity, PasswordProfile, RequestBody};
@@ -453,6 +453,8 @@ mod tests {
                 issuer: "test.com".to_string(),
                 issuerAssignedId: issuer_assigned_id.to_string(),
             }],
+            authMethodType: None,
+            authMethodValue: None,
             custom_fields: HashMap::new(),
         }
     }
@@ -472,7 +474,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
         mock.assert_async().await;
     }
 
@@ -508,7 +510,7 @@ mod tests {
         let client_clone = client.clone();
         let endpoint_clone = endpoint.to_string(); // server.url() returns String, so cloning is fine.
         let task = tokio::spawn(async move {
-            make_async_rest_call(&client_clone, &endpoint_clone, body, bearer_token, false).await
+            create_user_api_call(&client_clone, &endpoint_clone, body, bearer_token, false).await
         });
 
         // Allow the first call to happen
@@ -545,7 +547,7 @@ mod tests {
 
         // No need to pause/advance time here as it should not sleep with invalid header
 
-        make_async_rest_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -565,7 +567,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -584,7 +586,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -603,7 +605,7 @@ mod tests {
             .create_async()
             .await;
 
-        make_async_rest_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -619,7 +621,7 @@ mod tests {
         // We can't easily assert logs here without a more complex setup,
         // but the main thing is that the function should complete and not panic.
         // The error will be logged by the function itself.
-        make_async_rest_call(&client, endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, endpoint, body, bearer_token, false).await;
         // No mockito assertion here as we are not using a mockito server for this specific test.
         // We rely on the function's own error logging and graceful exit from the loop.
     }
