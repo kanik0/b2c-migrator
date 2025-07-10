@@ -7,12 +7,16 @@ use tokio::time::{sleep, Duration};
 pub async fn create_user_api_call(
     client: &reqwest::Client,
     endpoint: &str,
-    body: RequestBody,
+    mut body: RequestBody,
     token: &str,
     patch_auth_methods: bool,
 ) {
     loop {
         let original_body = body.clone();
+
+        // Clean body from auth methods values
+        body.authMethodType = None;
+        body.authMethodValue = None;
 
         match client
             .post(endpoint)
@@ -38,13 +42,16 @@ pub async fn create_user_api_call(
                         // Parse the JSON body into a serde_json::Value.
                         match response.json::<serde_json::Value>().await {
                             Ok(json_body) => {
-                                if let Some(id) = json_body.get("id") {
-                                    let auth_endpoint = format!("{endpoint}/v1.0/users/{id}/authentication/phoneMethods");
-                                    create_auth_method_api_call(client, &*auth_endpoint, original_body, token).await;
-                                    info!(
-                                        "[{:?}] Should do another request here using id {}.",
-                                        body.identities[0].issuerAssignedId, id
-                                    );
+                                if let Some(id) = json_body.get("id").and_then(|v| v.as_str()) {
+                                    let auth_endpoint =
+                                        format!("{endpoint}/{}/authentication/phoneMethods", id);
+                                    create_auth_method_api_call(
+                                        client,
+                                        &*auth_endpoint,
+                                        original_body,
+                                        token,
+                                    )
+                                    .await;
                                 } else {
                                     warn!(
                                         "[{:?}] The 'id' field was not found in the response.",
@@ -125,7 +132,7 @@ pub async fn create_auth_method_api_call(
         };
 
         match client
-            .post(format!("{}{}", endpoint, "asd"))
+            .post(endpoint)
             .header("Authorization", format!("Bearer {token}"))
             .json(&auth_body)
             .send()
@@ -138,7 +145,6 @@ pub async fn create_auth_method_api_call(
                         body.identities[0].issuerAssignedId,
                         response.status()
                     );
-
                     break;
                 } else if response.status().as_u16() == 401 || response.status().as_u16() == 403 {
                     error!(
