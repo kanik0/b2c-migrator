@@ -16,9 +16,9 @@ pub struct RequestBody {
 
     // Optional fields for the authentication methods
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authMethodType: Option<String>,
+    pub phoneAuthMethod: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authMethodValue: Option<String>,
+    pub emailAuthMethod: Option<String>,
 
     // Optional fields (based on user object properties) and extension attributes
     #[serde(flatten)]
@@ -63,12 +63,19 @@ where
     }
 }
 
-// Object that represents an authentication method
+// Object that represents a phone authentication method
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AuthMethodBody {
+pub struct PhoneAuthMethodRequestBody {
     // Mandatory fields for creating the authentication method
     pub phoneNumber: String,
     pub phoneType: String,
+}
+
+// Object that represents an email authentication method
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EmailAuthMethodRequestBody {
+    // Mandatory fields for creating the authentication method
+    pub emailAddress: String,
 }
 
 #[cfg(test)]

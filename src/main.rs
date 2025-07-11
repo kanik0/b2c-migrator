@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 use db::*;
 use graph::*;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{error, info};
+use log::info;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -117,19 +117,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Open the CSV file.
     let mut rdr = csv::Reader::from_path(file_path.clone())?;
 
-    // Check for authMethodType and authMethodValue columns in the header.
+    // Check for authentication methods in the CSV columns
     let headers = rdr.headers()?;
-    let has_auth_method_type = headers.iter().any(|h| h == "authMethodType");
-    let has_auth_method_value = headers.iter().any(|h| h == "authMethodValue");
-
-    if has_auth_method_type != has_auth_method_value {
-        // Only one of the two columns is present.
-        error!("CSV file must include either both 'authMethodType' and 'authMethodValue' or neither. Exiting.");
-        std::process::exit(1);
-    }
-
-    // Determine whether create_user_api_call has to send a second request to patch the authentication methods.
-    let patch_auth_methods = has_auth_method_type && has_auth_method_value;
+    let has_phone_auth_method = headers.iter().any(|h| h == "phoneAuthMethod");
+    let has_email_auth_method = headers.iter().any(|h| h == "emailAuthMethod");
 
     // Determine the number of records in the CSV file.
     let records: Vec<_> = csv::Reader::from_path(file_path.clone())?
@@ -171,7 +162,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &endpoint,
                 record,
                 &bearer_token,
-                patch_auth_methods,
+                has_phone_auth_method,
+                has_email_auth_method,
             )
             .await;
             pb.inc(1);
@@ -453,8 +445,8 @@ mod tests {
                 issuer: "test.com".to_string(),
                 issuerAssignedId: issuer_assigned_id.to_string(),
             }],
-            authMethodType: None,
-            authMethodValue: None,
+            phoneAuthMethod: None,
+            emailAuthMethod: None,
             custom_fields: HashMap::new(),
         }
     }
@@ -474,7 +466,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
         mock.assert_async().await;
     }
 
@@ -510,7 +502,7 @@ mod tests {
         let client_clone = client.clone();
         let endpoint_clone = endpoint.to_string(); // server.url() returns String, so cloning is fine.
         let task = tokio::spawn(async move {
-            create_user_api_call(&client_clone, &endpoint_clone, body, bearer_token, false).await
+            create_user_api_call(&client_clone, &endpoint_clone, body, bearer_token, false, false).await
         });
 
         // Allow the first call to happen
@@ -547,7 +539,7 @@ mod tests {
 
         // No need to pause/advance time here as it should not sleep with invalid header
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -567,7 +559,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -586,7 +578,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -605,7 +597,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -621,7 +613,7 @@ mod tests {
         // We can't easily assert logs here without a more complex setup,
         // but the main thing is that the function should complete and not panic.
         // The error will be logged by the function itself.
-        create_user_api_call(&client, endpoint, body, bearer_token, false).await;
+        create_user_api_call(&client, endpoint, body, bearer_token, false, false).await;
         // No mockito assertion here as we are not using a mockito server for this specific test.
         // We rely on the function's own error logging and graceful exit from the loop.
     }
