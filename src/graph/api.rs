@@ -27,7 +27,7 @@ pub async fn create_user_api_call(
             .send()
             .await
         {
-            Ok(mut response) => {
+            Ok(response) => {
                 let status = response.status();
 
                 if status.is_success() {
