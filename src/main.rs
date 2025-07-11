@@ -8,9 +8,9 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+mod customizations;
 mod db;
 mod graph;
-mod customizations;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -77,7 +77,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .help("Turn on Prj1 customization")
                 .action(ArgAction::SetTrue), // 0-arity flag
         )
-
         .get_matches();
 
     // Bearer token for authentication
@@ -120,10 +119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = reqwest::Client::new();
 
     // PRJ1 Customization
-    let prj1 = matches
-        .get_one::<bool>("prj1")
-        .copied()
-        .unwrap_or(false);
+    let prj1 = matches.get_one::<bool>("prj1").copied().unwrap_or(false);
 
     // Configure the logger
     setup_logger(log_file, db_file)?;
@@ -178,7 +174,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &bearer_token,
                 has_phone_auth_method,
                 has_email_auth_method,
-                prj1
+                prj1,
             )
             .await;
             pb.inc(1);

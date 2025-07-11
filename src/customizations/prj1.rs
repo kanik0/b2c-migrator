@@ -1,10 +1,10 @@
 #![allow(non_snake_case)]
-use reqwest::{header, Client, Response};
-use serde::{Serialize, Deserialize};
-use std::{fs, path::Path, borrow::Cow};
 use chrono::Utc;
+use log::{error, info};
+use reqwest::{header, Client};
+use serde::{Deserialize, Serialize};
+use std::{fs, path::Path};
 use uuid::Uuid;
-use log::{error, info, warn};
 
 /// Mirrors the keys that appear in the TOML configuration file.
 ///
@@ -20,12 +20,12 @@ use log::{error, info, warn};
 /// ```
 #[derive(Debug, Deserialize)]
 pub struct Prj1AppConfig {
-    url:             String,
+    url: String,
     applicationCode: String,
-    name:            String,
-    surname:         String,
-    userId:          String,
-    actualUserId:    String,
+    name: String,
+    surname: String,
+    userId: String,
+    actualUserId: String,
 
     #[serde(rename = "X-LAGKey")]
     x_lag_key: String,
@@ -70,7 +70,7 @@ struct TechHeader {
     applicationCode: String,
     correlationId: String,
     channel: String,
-    timeStamp: String,        // keep as String if you must send the epoch as text
+    timeStamp: String,
 }
 
 #[derive(Serialize)]
@@ -98,7 +98,9 @@ struct ArchUser {
 /// # Errors
 /// * I/O failures while reading the file
 /// * TOML-syntax or type mismatches while parsing
-pub fn prj1_load_config<P: AsRef<Path>>(path: P) -> Result<Prj1AppConfig, Box<dyn std::error::Error>> {
+pub fn prj1_load_config<P: AsRef<Path>>(
+    path: P,
+) -> Result<Prj1AppConfig, Box<dyn std::error::Error>> {
     let contents = fs::read_to_string(path)?;
     let config = toml::from_str::<Prj1AppConfig>(&contents)?;
     Ok(config)
@@ -110,8 +112,8 @@ pub fn prj1_load_config<P: AsRef<Path>>(path: P) -> Result<Prj1AppConfig, Box<dy
 /// `subject`, `body_text`, and `recipients` are the dynamic parts that
 /// vary for each request.
 fn build_request_body(
-    cfg:       &Prj1AppConfig,
-    subject:   impl Into<String>,
+    cfg: &Prj1AppConfig,
+    subject: impl Into<String>,
     body_text: impl Into<String>,
     recipient: String,
 ) -> Prj1RequestBody {
@@ -119,35 +121,34 @@ fn build_request_body(
         payload: Payload {
             data: Data {
                 subject: subject.into(),
-                body:    body_text.into(),
-                to:      vec![recipient],
+                body: body_text.into(),
+                to: vec![recipient],
             },
         },
         headers: Headers {
             headers: HeadersContainer {
                 tech_header: TechHeader {
-                    id:              "tech_header".into(),
+                    id: "tech_header".into(),
                     applicationCode: cfg.applicationCode.clone(),
-                    correlationId:   Uuid::new_v4().to_string(),
-                    channel:         "B2B".into(),
-                    timeStamp:       Utc::now().timestamp_millis().to_string(),
+                    correlationId: Uuid::new_v4().to_string(),
+                    channel: "B2B".into(),
+                    timeStamp: Utc::now().timestamp_millis().to_string(),
                 },
                 user_header: UserHeader {
                     id: "user_header".into(),
                     archUser: ArchUser {
-                        name:          cfg.name.clone(),
-                        surname:       cfg.surname.clone(),
-                        userId:        cfg.userId.clone(),
-                        actualUserId:  cfg.actualUserId.clone(),
-                        userGroups:    Vec::new(),
-                        userRoles:     Vec::new(),
+                        name: cfg.name.clone(),
+                        surname: cfg.surname.clone(),
+                        userId: cfg.userId.clone(),
+                        actualUserId: cfg.actualUserId.clone(),
+                        userGroups: Vec::new(),
+                        userRoles: Vec::new(),
                     },
                 },
             },
         },
     }
 }
-
 
 /// Send `Prj1RequestBody` to the REST endpoint described in `Prj1AppConfig`.
 ///
@@ -156,11 +157,7 @@ fn build_request_body(
 /// * `body`   – fully-populated request payload
 ///
 /// Returns a raw `reqwest::Response`.
-pub async fn send_notification(
-    client: &Client,
-    cfg: &Prj1AppConfig,
-    email: &String,
-)   {
+pub async fn send_notification(client: &Client, cfg: &Prj1AppConfig, email: &String) {
     // Initialize request body
     let body = build_request_body(
         &cfg,
@@ -180,17 +177,17 @@ pub async fn send_notification(
         .await
     {
         Ok(response) => {
-            info!("[{:?}] Successfully sent notification email, with status: {}.",
+            info!(
+                "[{:?}] Successfully sent notification email, with status: {}.",
                 email,
                 response.status()
             );
         }
         Err(e) => {
-            error!("[{:?}] Something went wrong when sending the email: {e:?}",
+            error!(
+                "[{:?}] Something went wrong when sending the email: {e:?}",
                 email
             );
         }
     }
 }
-
-

@@ -1,5 +1,5 @@
-use crate::graph::user::*;
 use crate::customizations::prj1::*;
+use crate::graph::user::*;
 use log::{error, info, warn};
 use tokio::time::{sleep, Duration};
 
@@ -12,7 +12,7 @@ pub async fn create_user_api_call(
     token: &str,
     phone_auth_method: bool,
     email_auth_method: bool,
-    prj1: bool
+    prj1: bool,
 ) {
     loop {
         // Clone body to use it in eventual create_phone/mail_auth_method_api_call
@@ -93,12 +93,7 @@ pub async fn create_user_api_call(
                     // Customization for Proj1
                     if prj1 {
                         let cfg = prj1_load_config("prj1config.toml").unwrap();
-                        send_notification(
-                            client,
-                            &cfg,
-                            &body.identities[0].issuerAssignedId,
-                        )
-                        .await;
+                        send_notification(client, &cfg, &body.identities[0].issuerAssignedId).await;
                     }
                     break;
                 } else if response.status().as_u16() == 401 || response.status().as_u16() == 403 {
