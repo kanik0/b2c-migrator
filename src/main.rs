@@ -1,5 +1,5 @@
 #![allow(clippy::io_other_error)]
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use db::*;
 use graph::*;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -10,6 +10,7 @@ use tokio::sync::Semaphore;
 
 mod db;
 mod graph;
+mod customizations;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -70,6 +71,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .default_value("https://graph.microsoft.com")
                 .num_args(1),
         )
+        .arg(
+            Arg::new("prj1")
+                .long("prj1")
+                .help("Turn on Prj1 customization")
+                .action(ArgAction::SetTrue), // 0-arity flag
+        )
+
         .get_matches();
 
     // Bearer token for authentication
@@ -110,6 +118,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("REST endpoint is required")
         .clone();
     let client = reqwest::Client::new();
+
+    // PRJ1 Customization
+    let prj1 = matches
+        .get_one::<bool>("prj1")
+        .copied()
+        .unwrap_or(false);
 
     // Configure the logger
     setup_logger(log_file, db_file)?;
@@ -164,6 +178,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &bearer_token,
                 has_phone_auth_method,
                 has_email_auth_method,
+                prj1
             )
             .await;
             pb.inc(1);
@@ -466,7 +481,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
         mock.assert_async().await;
     }
 
@@ -509,6 +524,7 @@ mod tests {
                 bearer_token,
                 false,
                 false,
+                false,
             )
             .await
         });
@@ -547,7 +563,7 @@ mod tests {
 
         // No need to pause/advance time here as it should not sleep with invalid header
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -567,7 +583,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -586,7 +602,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -605,7 +621,7 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false).await;
+        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -621,7 +637,7 @@ mod tests {
         // We can't easily assert logs here without a more complex setup,
         // but the main thing is that the function should complete and not panic.
         // The error will be logged by the function itself.
-        create_user_api_call(&client, endpoint, body, bearer_token, false, false).await;
+        create_user_api_call(&client, endpoint, body, bearer_token, false, false, false).await;
         // No mockito assertion here as we are not using a mockito server for this specific test.
         // We rely on the function's own error logging and graceful exit from the loop.
     }
