@@ -502,7 +502,14 @@ mod tests {
         let client_clone = client.clone();
         let endpoint_clone = endpoint.to_string(); // server.url() returns String, so cloning is fine.
         let task = tokio::spawn(async move {
-            create_user_api_call(&client_clone, &endpoint_clone, body, bearer_token, false, false).await
+            create_user_api_call(
+                &client_clone,
+                &endpoint_clone,
+                body, bearer_token,
+                false,
+                false
+            )
+            .await
         });
 
         // Allow the first call to happen

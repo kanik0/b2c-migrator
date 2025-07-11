@@ -35,7 +35,8 @@ pub async fn create_user_api_call(
                     let json_body: serde_json::Value = match response.json().await {
                         Ok(v) => v,
                         Err(e) => {
-                            error!("[{:?}] Error parsing JSON response: {e:?}",
+                            error!(
+                                "[{:?}] Error parsing JSON response: {e:?}",
                                 body.identities[0].issuerAssignedId
                             );
                             break;
@@ -62,28 +63,29 @@ pub async fn create_user_api_call(
 
                     if let Some(id) = user_id {
                         if phone_auth_method {
-                            let auth_endpoint = format!("{endpoint}/{id}/authentication/phoneMethods");
+                            let auth_endpoint =
+                                format!("{endpoint}/{id}/authentication/phoneMethods");
                             create_phone_auth_method_api_call(
                                 client,
                                 &auth_endpoint,
                                 original_body.clone(),
                                 token,
                             )
-                                .await;
+                            .await;
                         }
                         if email_auth_method {
-                            let auth_endpoint = format!("{endpoint}/{id}/authentication/emailMethods");
+                            let auth_endpoint =
+                                format!("{endpoint}/{id}/authentication/emailMethods");
                             create_email_auth_method_api_call(
                                 client,
                                 &auth_endpoint,
                                 original_body,
                                 token,
                             )
-                                .await;
+                            .await;
                         }
                     }
                     break;
-
                 } else if response.status().as_u16() == 401 || response.status().as_u16() == 403 {
                     error!(
                         "[{:?}] Something went wrong. Received {}. Maybe token is invalid or expired? Exiting..",
