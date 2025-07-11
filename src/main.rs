@@ -505,9 +505,10 @@ mod tests {
             create_user_api_call(
                 &client_clone,
                 &endpoint_clone,
-                body, bearer_token,
+                body,
+                bearer_token,
                 false,
-                false
+                false,
             )
             .await
         });
