@@ -13,10 +13,12 @@ pub async fn create_user_api_call(
     email_auth_method: bool,
 ) {
     loop {
-        // Clone body to use it in eventual create_auth_method_api_call
+        // Clone body to use it in eventual create_phone/mail_auth_method_api_call
         let original_body = body.clone();
 
-        // Clean body from auth methods values
+        // Clean body from auth methods values since they must not be part
+        // of the user creation JSON body, they are used, if present, during
+        // the authentication method creation api call
         body.phoneAuthMethod = None;
         body.emailAuthMethod = None;
 
