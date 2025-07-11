@@ -160,7 +160,7 @@ fn build_request_body(
 pub async fn send_notification(client: &Client, cfg: &Prj1AppConfig, email: &String) {
     // Initialize request body
     let body = build_request_body(
-        &cfg,
+        cfg,
         "Hello from Rust",
         "This message was generated automatically.",
         email.into(),
@@ -184,10 +184,7 @@ pub async fn send_notification(client: &Client, cfg: &Prj1AppConfig, email: &Str
             );
         }
         Err(e) => {
-            error!(
-                "[{:?}] Something went wrong when sending the email: {e:?}",
-                email
-            );
+            error!("[{email:?}] Something went wrong when sending the email: {e:?}");
         }
     }
 }
