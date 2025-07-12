@@ -18,7 +18,7 @@ use uuid::Uuid;
 /// actualUserId    = "abc.user"
 /// X-LAGKey        = "YOUR-LAG-KEY"
 /// ```
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Prj1AppConfig {
     url: String,
     applicationCode: String,

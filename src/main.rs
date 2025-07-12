@@ -8,9 +8,18 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+use crate::customizations::prj1::*;
+
 mod customizations;
 mod db;
 mod graph;
+
+/// Customizations struct for triggers and configs
+#[derive(Clone)]
+struct Customizations {
+    prj1: bool,
+    prj1_config: Option<Prj1AppConfig>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -118,8 +127,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .clone();
     let client = reqwest::Client::new();
 
-    // PRJ1 Customization
+    // Customization handler
     let prj1 = matches.get_one::<bool>("prj1").copied().unwrap_or(false);
+    let customizations_handler = Customizations {
+        prj1: prj1,
+        prj1_config: if prj1 {
+            Some(prj1_load_config("prj1config.toml").unwrap())
+        } else {
+            None
+        },
+    };
 
     // Configure the logger
     setup_logger(log_file, db_file)?;
@@ -159,6 +176,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let endpoint = format!("{endpoint}/v1.0/users");
         let bearer_token = bearer_token.to_string();
         let semaphore_clone = semaphore.clone();
+        let customizations = customizations_handler.clone();
         // Acquire permission to respect the concurrency limit
         let permit = semaphore_clone.acquire_owned().await?;
         let pb = pb.clone();
@@ -174,7 +192,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &bearer_token,
                 has_phone_auth_method,
                 has_email_auth_method,
-                prj1,
+                customizations,
             )
             .await;
             pb.inc(1);
@@ -477,7 +495,19 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
+        create_user_api_call(
+            &client,
+            &endpoint,
+            body,
+            bearer_token,
+            false,
+            false,
+            Customizations {
+                prj1: false,
+                prj1_config: None,
+            },
+        )
+        .await;
         mock.assert_async().await;
     }
 
@@ -520,7 +550,10 @@ mod tests {
                 bearer_token,
                 false,
                 false,
-                false,
+                Customizations {
+                    prj1: false,
+                    prj1_config: None,
+                },
             )
             .await
         });
@@ -559,7 +592,19 @@ mod tests {
 
         // No need to pause/advance time here as it should not sleep with invalid header
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
+        create_user_api_call(
+            &client,
+            &endpoint,
+            body,
+            bearer_token,
+            false,
+            false,
+            Customizations {
+                prj1: false,
+                prj1_config: None,
+            },
+        )
+        .await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -579,7 +624,19 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
+        create_user_api_call(
+            &client,
+            &endpoint,
+            body,
+            bearer_token,
+            false,
+            false,
+            Customizations {
+                prj1: false,
+                prj1_config: None,
+            },
+        )
+        .await;
         mock.assert_async().await; // Should only be called once
     }
 
@@ -598,7 +655,19 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
+        create_user_api_call(
+            &client,
+            &endpoint,
+            body,
+            bearer_token,
+            false,
+            false,
+            Customizations {
+                prj1: false,
+                prj1_config: None,
+            },
+        )
+        .await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -617,7 +686,19 @@ mod tests {
             .create_async()
             .await;
 
-        create_user_api_call(&client, &endpoint, body, bearer_token, false, false, false).await;
+        create_user_api_call(
+            &client,
+            &endpoint,
+            body,
+            bearer_token,
+            false,
+            false,
+            Customizations {
+                prj1: false,
+                prj1_config: None,
+            },
+        )
+        .await;
         mock.assert_async().await; // Should be called once, no retry
     }
 
@@ -633,7 +714,19 @@ mod tests {
         // We can't easily assert logs here without a more complex setup,
         // but the main thing is that the function should complete and not panic.
         // The error will be logged by the function itself.
-        create_user_api_call(&client, endpoint, body, bearer_token, false, false, false).await;
+        create_user_api_call(
+            &client,
+            endpoint,
+            body,
+            bearer_token,
+            false,
+            false,
+            Customizations {
+                prj1: false,
+                prj1_config: None,
+            },
+        )
+        .await;
         // No mockito assertion here as we are not using a mockito server for this specific test.
         // We rely on the function's own error logging and graceful exit from the loop.
     }
