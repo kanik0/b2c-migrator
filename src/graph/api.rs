@@ -202,9 +202,18 @@ pub async fn create_phone_auth_method_api_call(
                         body.identities[0].issuerAssignedId
                     );
                     break;
+                } else if response.status().as_u16() == 404 {
+                    // Create auth method request was made too soon after user creation
+                    warn!(
+                        "[{:?}] Received 404 while creating auth method, retrying in one second. Status: {}.",
+                        body.identities[0].issuerAssignedId,
+                        response.status()
+                    );
+                    sleep(Duration::from_secs(1)).await;
+                    continue; // Repeat the loop to retry the request
                 } else {
                     error!(
-                        "[{:?}] Error in request with status: {}.",
+                        "[{:?}] Error in create_phone_auth_method_api_call request with status: {}.",
                         body.identities[0].issuerAssignedId,
                         response.status()
                     );
@@ -213,7 +222,7 @@ pub async fn create_phone_auth_method_api_call(
             }
             Err(e) => {
                 error!(
-                    "[{:?}] Error in request: {:?}.",
+                    "[{:?}] Error in in create_phone_auth_method_api_call request: {:?}.",
                     body.identities[0].issuerAssignedId, e
                 );
                 break;
@@ -277,9 +286,18 @@ pub async fn create_email_auth_method_api_call(
                         body.identities[0].issuerAssignedId
                     );
                     break;
+                } else if response.status().as_u16() == 404 {
+                    // Create auth method request was made too soon after user creation
+                    warn!(
+                        "[{:?}] Received 404 while creating auth method, retrying in one second. Status: {}.",
+                        body.identities[0].issuerAssignedId,
+                        response.status()
+                    );
+                    sleep(Duration::from_secs(1)).await;
+                    continue; // Repeat the loop to retry the request
                 } else {
                     error!(
-                        "[{:?}] Error in request with status: {}.",
+                        "[{:?}] Error in create_email_auth_method_api_call request with status: {}.",
                         body.identities[0].issuerAssignedId,
                         response.status()
                     );
@@ -288,7 +306,7 @@ pub async fn create_email_auth_method_api_call(
             }
             Err(e) => {
                 error!(
-                    "[{:?}] Error in request: {:?}.",
+                    "[{:?}] Error in create_email_auth_method_api_call request: {:?}.",
                     body.identities[0].issuerAssignedId, e
                 );
                 break;
